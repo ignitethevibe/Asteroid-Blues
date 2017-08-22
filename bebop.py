@@ -8,6 +8,7 @@ img_dir = path.join(path.dirname(__file__), 'img')
 WIDTH = 480
 HEIGHT = 600
 FPS = 60
+POWERUP_TIME = 5000
 
 #-- Colors
 white = (255,255,255)
@@ -73,8 +74,15 @@ class Player(pygame.sprite.Sprite):
         self.lives = 3
         self.hidden = False
         self.hide_timer = pygame.time.get_ticks()
+        self.power = 1
+        self.power_time = pygame.time.get_ticks()
 
     def update(self):
+        # power up timeout
+        if self.power >= 2 and pygame.time.get_ticks() - self.power_time > POWERUP_TIME:
+            self.power -= 1
+            self.power_time = pygame.time.get_ticks()
+
         # unhide if hidden
         if self.hidden and pygame.time.get_ticks() - self.hide_timer > 1000:
             self.hidden = False
@@ -99,15 +107,29 @@ class Player(pygame.sprite.Sprite):
         now = pygame.time.get_ticks()
         if now - self.last_shot > self.shoot_delay:
             self.last_shot = now
-            bullet = Bullet(self.rect.centerx, self.rect.top)
-            all_sprites.add(bullet)
-            bullet.add(bullets)
+            if self.power == 1:
+                bullet = Bullet(self.rect.centerx, self.rect.top)
+                all_sprites.add(bullet)
+                bullets.add(bullet)
+            if self.power >= 2:
+                bullet1 = Bullet(self.rect.left, self.rect.centery)
+                bullet2 = Bullet(self.rect.right, self.rect.centery)
+                all_sprites.add(bullet1)
+                all_sprites.add(bullet2)
+                bullets.add(bullet1)
+                bullets.add(bullet2)
+
 
     def hide(self):
         # hide player temporarily
         self.hidden = True
         self.hide_timer = pygame.time.get_ticks()
         self.rect.center = (WIDTH / 2, HEIGHT + 200)
+
+    def powerup(self):
+        self.power += 1
+        self.power_time = pygame.time.get_ticks()
+
 
 class Mob(pygame.sprite.Sprite):
     def __init__(self):
@@ -163,6 +185,24 @@ class Bullet(pygame.sprite.Sprite):
         self.rect.y += self.speedy
         # kill if it moves off the top of the screen
         if self.rect.bottom < 0:
+            self.kill()
+
+#- power-up
+class Pow(pygame.sprite.Sprite):
+    def __init__(self, center):
+        pygame.sprite.Sprite.__init__(self)
+        self.type = random.choice(['shield', 'gun'])
+        self.image = powerup_images[self.type]
+        transColor = self.image.get_at((0,0))
+        self.image.set_colorkey(transColor)
+        self.rect = self.image.get_rect()
+        self.rect.center = center
+        self.speedy = 2
+
+    def update(self):
+        self.rect.y += self.speedy
+        # kill if it moves off the top of the screen
+        if self.rect.top > HEIGHT:
             self.kill()
 
 class Explosion(pygame.sprite.Sprite):
@@ -241,7 +281,9 @@ for i in range(9):
     transColor = img.get_at((0,0))
     img.set_colorkey(transColor)
     explosion_anim['player'].append(img)
-
+powerup_images = {}
+powerup_images['shield'] = pygame.image.load(path.join(img_dir, 'fayechip.png')).convert()
+powerup_images['gun'] = pygame.image.load(path.join(img_dir, 'lucky_strike.png')).convert()
 
 
 #-- Game Loop
@@ -254,6 +296,7 @@ while running:
         all_sprites = pygame.sprite.Group()
         mobs = pygame.sprite.Group()
         bullets = pygame.sprite.Group()
+        powerups = pygame.sprite.Group()
         player = Player()
         all_sprites.add(player)
         for i in range(8):
@@ -276,6 +319,10 @@ while running:
         score += 50 - hit.radius
         expl = Explosion(hit.rect.center, 'lg')
         all_sprites.add(expl)
+        if random.random() > 0.9:
+            pow = Pow(hit.rect.center)
+            all_sprites.add(pow)
+            powerups.add(pow)
         newmob()
 
     hits = pygame.sprite.spritecollide(player, mobs, True, pygame.sprite.collide_circle)
@@ -290,6 +337,15 @@ while running:
             player.hide()
             player.lives -= 1
             player.shield = 100
+
+    hits = pygame.sprite.spritecollide(player, powerups, True)
+    for hit in hits:
+        if hit.type == 'shield':
+            player.shield += random.randrange(10,30)
+            if player.shield >= 100:
+                player.shield = 100
+            if hit.type == 'gun':
+                player.powerup()
 
     if player.lives == 0 and not death_explosion.alive():
         game_over = True
